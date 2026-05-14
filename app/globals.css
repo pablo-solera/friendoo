@@ -24,3 +24,35 @@ input,
 textarea {
   -webkit-tap-highlight-color: transparent;
 }
+
+.festival-glow {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 79, 94, 0.18), transparent 28%),
+    radial-gradient(circle at 82% 12%, rgba(255, 230, 109, 0.55), transparent 30%),
+    radial-gradient(circle at 75% 62%, rgba(46, 196, 182, 0.18), transparent 28%),
+    linear-gradient(180deg, #fff7ea 0%, #fff0d8 100%);
+}
+
+.ticket-corners {
+  position: relative;
+}
+
+.ticket-corners::before,
+.ticket-corners::after {
+  background: #fff7ea;
+  border-radius: 999px;
+  content: "";
+  height: 2rem;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2rem;
+}
+
+.ticket-corners::before {
+  left: -1rem;
+}
+
+.ticket-corners::after {
+  right: -1rem;
+}
