@@ -13,7 +13,7 @@ export function CopyButton({ value, label = "Copiar" }: { value: string; label?:
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1600);
       }}
-      className="rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-orange-50 transition hover:-translate-y-0.5 hover:bg-stone-800"
+      className="rounded-full bg-[#14213d] px-4 py-2 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#1d315a]"
     >
       {copied ? "Copiado" : label}
     </button>
