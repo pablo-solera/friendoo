@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { sendDrawEmail } from "@/lib/email";
+import { getSiteUrl } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const groupSchema = z.object({
@@ -36,15 +37,15 @@ type MemberWithProfile = {
     | null;
 };
 
+type DrawAssignment = {
+  id: string;
+  giver_id: string;
+  receiver_id: string;
+};
+
 export async function createGroup(formData: FormData) {
   const user = await requireUser();
-  const parsed = groupSchema.safeParse({
-    name: formData.get("name"),
-    maxPrice: formData.get("maxPrice"),
-    exchangeDate: formData.get("exchangeDate") || undefined,
-    message: formData.get("message") || undefined,
-    giftSuggestions: formData.get("giftSuggestions") || undefined,
-  });
+  const parsed = groupSchema.safeParse(getGroupFormInput(formData));
 
   if (!parsed.success) {
     redirect("/groups/new?error=Revisa los datos del grupo");
@@ -69,12 +70,16 @@ export async function createGroup(formData: FormData) {
     redirect("/groups/new?error=No se pudo crear el grupo");
   }
 
-  await admin.from("group_members").insert({
+  const { error: memberError } = await admin.from("group_members").insert({
     group_id: group.id,
     user_id: user.id,
     role: "owner",
     gift_suggestions: parsed.data.giftSuggestions || null,
   });
+
+  if (memberError) {
+    redirect(`/groups/${group.id}?error=El grupo se creó, pero no se pudo añadir al organizador`);
+  }
 
   revalidatePath("/dashboard");
   redirect(`/groups/${group.id}`);
@@ -98,13 +103,13 @@ async function joinGroup(rawCode: string) {
   }
 
   const admin = createAdminClient();
-  const { data: group } = await admin
+  const { data: group, error: groupError } = await admin
     .from("groups")
     .select("id, status")
     .eq("join_code", code)
-    .single();
+    .maybeSingle();
 
-  if (!group) {
+  if (groupError || !group) {
     redirect("/dashboard?error=No existe ningún grupo con ese código");
   }
 
@@ -112,7 +117,7 @@ async function joinGroup(rawCode: string) {
     redirect(`/groups/${group.id}?error=El sorteo ya se ha realizado`);
   }
 
-  await admin.from("group_members").upsert(
+  const { error: memberError } = await admin.from("group_members").upsert(
     {
       group_id: group.id,
       user_id: user.id,
@@ -120,6 +125,10 @@ async function joinGroup(rawCode: string) {
     },
     { onConflict: "group_id,user_id", ignoreDuplicates: true },
   );
+
+  if (memberError) {
+    redirect(`/groups/${group.id}?error=No se pudo unir al grupo`);
+  }
 
   revalidatePath("/dashboard");
   redirect(`/groups/${group.id}`);
@@ -137,11 +146,17 @@ export async function updateGiftSuggestions(formData: FormData) {
   }
 
   const admin = createAdminClient();
-  await admin
+  const { error: updateError } = await admin
     .from("group_members")
     .update({ gift_suggestions: parsed.data.giftSuggestions || null })
     .eq("group_id", parsed.data.groupId)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("group_id")
+    .single();
+
+  if (updateError) {
+    redirect(`/groups/${parsed.data.groupId}?error=No se pudieron guardar las sugerencias`);
+  }
 
   revalidatePath(`/groups/${parsed.data.groupId}`);
   redirect(`/groups/${parsed.data.groupId}?saved=1`);
@@ -156,13 +171,13 @@ export async function runDraw(formData: FormData) {
   }
 
   const admin = createAdminClient();
-  const { data: group } = await admin
+  const { data: group, error: groupError } = await admin
     .from("groups")
     .select("id, owner_id, name, max_price, message, status")
     .eq("id", groupId)
-    .single();
+    .maybeSingle();
 
-  if (!group || group.owner_id !== user.id) {
+  if (groupError || !group || group.owner_id !== user.id) {
     redirect(`/groups/${groupId}?error=Solo el organizador puede realizar el sorteo`);
   }
 
@@ -170,24 +185,16 @@ export async function runDraw(formData: FormData) {
     redirect(`/groups/${groupId}/reveal`);
   }
 
-  const { data: members } = await admin
+  const { data: members, error: membersError } = await admin
     .from("group_members")
     .select("user_id, gift_suggestions, profiles(id, email, name)")
     .eq("group_id", groupId);
 
-  if (!members || members.length < 3) {
+  if (membersError || !members || members.length < 3) {
     redirect(`/groups/${groupId}?error=Necesitas al menos 3 participantes`);
   }
 
-  const shuffled = shuffle([...members]);
-  const assignments = shuffled.map((member, index) => {
-    const receiver = shuffled[(index + 1) % shuffled.length];
-    return {
-      group_id: groupId,
-      giver_id: member.user_id,
-      receiver_id: receiver.user_id,
-    };
-  });
+  const assignments = createAssignments(groupId, members);
 
   const { data: inserted, error: insertError } = await admin
     .from("draw_assignments")
@@ -198,45 +205,102 @@ export async function runDraw(formData: FormData) {
     redirect(`/groups/${groupId}?error=No se pudo guardar el sorteo`);
   }
 
-  await admin.from("groups").update({ status: "drawn" }).eq("id", groupId);
+  const { error: statusError } = await admin
+    .from("groups")
+    .update({ status: "drawn" })
+    .eq("id", groupId)
+    .eq("status", "draft")
+    .select("id")
+    .single();
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  if (statusError) {
+    redirect(`/groups/${groupId}?error=No se pudo cerrar el sorteo`);
+  }
+
   const memberMap = new Map(members.map((member) => [member.user_id, normalizeMember(member)]));
 
   await Promise.all(
-    inserted.map(async (assignment) => {
-      const giver = memberMap.get(assignment.giver_id);
-      const receiver = memberMap.get(assignment.receiver_id);
-
-      if (!giver?.email || !receiver) {
-        return;
-      }
-
-      const result = await sendDrawEmail({
-        to: giver.email,
-        groupName: group.name,
-        maxPrice: Number(group.max_price),
-        giverName: giver.name,
-        receiverName: receiver.name,
-        receiverSuggestions: receiver.giftSuggestions,
-        message: group.message,
-        groupUrl: `${siteUrl}/groups/${groupId}`,
-      });
-
-      await admin.from("email_deliveries").insert({
-        group_id: groupId,
-        assignment_id: assignment.id,
-        recipient_user_id: assignment.giver_id,
-        resend_id: result.id,
-        status: result.error ? "failed" : "sent",
-        error: result.error,
-        sent_at: result.error ? null : new Date().toISOString(),
-      });
-    }),
+    inserted.map((assignment) =>
+      sendAndTrackDrawEmail({
+        admin,
+        assignment,
+        group: {
+          id: groupId,
+          name: group.name,
+          maxPrice: Number(group.max_price),
+          message: group.message,
+        },
+        memberMap,
+      }),
+    ),
   );
 
   revalidatePath(`/groups/${groupId}`);
   redirect(`/groups/${groupId}/reveal`);
+}
+
+function getGroupFormInput(formData: FormData) {
+  return {
+    name: formData.get("name"),
+    maxPrice: formData.get("maxPrice"),
+    exchangeDate: formData.get("exchangeDate") || undefined,
+    message: formData.get("message") || undefined,
+    giftSuggestions: formData.get("giftSuggestions") || undefined,
+  };
+}
+
+function createAssignments(groupId: string, members: MemberWithProfile[]) {
+  const shuffled = shuffle([...members]);
+
+  return shuffled.map((member, index) => {
+    const receiver = shuffled[(index + 1) % shuffled.length];
+
+    return {
+      group_id: groupId,
+      giver_id: member.user_id,
+      receiver_id: receiver.user_id,
+    };
+  });
+}
+
+async function sendAndTrackDrawEmail({
+  admin,
+  assignment,
+  group,
+  memberMap,
+}: {
+  admin: ReturnType<typeof createAdminClient>;
+  assignment: DrawAssignment;
+  group: { id: string; name: string; maxPrice: number; message: string | null };
+  memberMap: Map<string, ReturnType<typeof normalizeMember>>;
+}) {
+  const giver = memberMap.get(assignment.giver_id);
+  const receiver = memberMap.get(assignment.receiver_id);
+
+  if (!giver?.email || !receiver) {
+    return;
+  }
+
+  const result = await sendDrawEmail({
+    to: giver.email,
+    groupName: group.name,
+    maxPrice: group.maxPrice,
+    giverName: giver.name,
+    receiverName: receiver.name,
+    receiverSuggestions: receiver.giftSuggestions,
+    message: group.message,
+    groupUrl: `${getSiteUrl()}/groups/${group.id}`,
+  });
+
+  await admin.from("email_deliveries").insert({
+    group_id: group.id,
+    assignment_id: assignment.id,
+    recipient_user_id: assignment.giver_id,
+    resend_id: result.id,
+    status: result.error ? "failed" : "sent",
+    error: result.error,
+    sent_at: result.error ? null : new Date().toISOString(),
+  });
 }
 
 async function createUniqueJoinCode(name: string) {

@@ -51,10 +51,14 @@ type RevealAssignmentRow = {
 
 export async function getDashboardGroups(userId: string) {
   const admin = createAdminClient();
-  const { data: memberships } = await admin
+  const { data: memberships, error: membershipsError } = await admin
     .from("group_members")
     .select("group_id")
     .eq("user_id", userId);
+
+  if (membershipsError) {
+    redirect("/dashboard?error=No se pudieron cargar tus grupos");
+  }
 
   const ids = memberships?.map((membership) => membership.group_id) ?? [];
 
@@ -62,11 +66,15 @@ export async function getDashboardGroups(userId: string) {
     return [] as GroupSummary[];
   }
 
-  const { data: groups } = await admin
+  const { data: groups, error: groupsError } = await admin
     .from("groups")
     .select("id, name, max_price, exchange_date, join_code, status, owner_id, group_members(count)")
     .in("id", ids)
     .order("created_at", { ascending: false });
+
+  if (groupsError) {
+    redirect("/dashboard?error=No se pudieron cargar tus grupos");
+  }
 
   return ((groups ?? []) as DashboardGroupRow[]).map((group) => ({
     id: group.id,
@@ -101,8 +109,12 @@ export async function getGroupForUser(groupId: string, userId: string) {
       .maybeSingle(),
   ]);
 
-  if (!groupResult.data) {
+  if (groupResult.error || !groupResult.data) {
     notFound();
+  }
+
+  if (memberResult.error || assignmentResult.error) {
+    redirect(`/groups/${groupId}?error=No se pudo cargar el grupo`);
   }
 
   const members = (memberResult.data ?? []).map(normalizeMember);
@@ -125,13 +137,13 @@ export async function getGroupForUser(groupId: string, userId: string) {
 
 export async function getRevealForOwner(groupId: string, userId: string) {
   const admin = createAdminClient();
-  const { data: group } = await admin
+  const { data: group, error: groupError } = await admin
     .from("groups")
     .select("id, owner_id, name, max_price, status")
     .eq("id", groupId)
-    .single();
+    .maybeSingle();
 
-  if (!group) {
+  if (groupError || !group) {
     notFound();
   }
 
@@ -139,13 +151,17 @@ export async function getRevealForOwner(groupId: string, userId: string) {
     redirect(`/groups/${groupId}?error=Solo el organizador puede ver esta revelación`);
   }
 
-  const { data: assignments } = await admin
+  const { data: assignments, error: assignmentsError } = await admin
     .from("draw_assignments")
     .select(
       "id, giver_id, receiver_id, giver:profiles!draw_assignments_giver_id_fkey(id, name, avatar_url), receiver:profiles!draw_assignments_receiver_id_fkey(id, name, avatar_url)",
     )
     .eq("group_id", groupId)
     .order("created_at", { ascending: true });
+
+  if (assignmentsError) {
+    redirect(`/groups/${groupId}?error=No se pudo cargar la revelación`);
+  }
 
   return {
     group: { ...group, max_price: Number(group.max_price) },
