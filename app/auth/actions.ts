@@ -1,11 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getSiteUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-
-function getSiteUrl() {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-}
 
 export async function signInWithGoogle() {
   const supabase = await createClient();
