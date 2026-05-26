@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createGroup } from "@/app/actions/groups";
+import { SubmitButton } from "@/components/submit-button";
 import { requireUser } from "@/lib/auth";
 
 export default async function NewGroupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
@@ -37,7 +38,7 @@ export default async function NewGroupPage({ searchParams }: { searchParams: Pro
               <label className="text-sm font-bold" htmlFor="giftSuggestions">Tus sugerencias</label>
               <textarea className="mt-2 min-h-32 w-full rounded-2xl border border-[#17120f]/10 bg-[#fff7ea] px-4 py-3 outline-none transition focus:border-[#2ec4b6]" id="giftSuggestions" name="giftSuggestions" placeholder="Libros, café de especialidad, plantas..." />
             </div>
-            <button className="w-full rounded-full bg-[#ff4f5e] px-6 py-4 font-black text-white shadow-[0_18px_45px_rgba(255,79,94,0.26)] transition hover:-translate-y-1" type="submit">Crear grupo</button>
+            <SubmitButton className="w-full rounded-full bg-[#ff4f5e] px-6 py-4 font-black text-white shadow-[0_18px_45px_rgba(255,79,94,0.26)] transition hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="Creando...">Crear grupo</SubmitButton>
           </form>
         </div>
       </div>

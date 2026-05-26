@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { runDraw, updateGiftSuggestions } from "@/app/actions/groups";
 import { CopyButton } from "@/components/copy-button";
+import { SubmitButton } from "@/components/submit-button";
 import { requireUser } from "@/lib/auth";
 import { getGroupForUser } from "@/lib/groups";
 
@@ -74,9 +75,9 @@ export default async function GroupPage({
                 <input type="hidden" name="groupId" value={group.id} />
                 <p className="text-sm font-black uppercase tracking-[0.22em] text-[#ff4f5e]">Organizador</p>
                 <p className="mt-3 text-[#17120f]/62">Cuando todos estén dentro, lanza el sorteo. Se enviará un email a cada participante.</p>
-                <button className="mt-5 w-full rounded-full bg-[#ff4f5e] px-5 py-4 font-black text-white shadow-[0_18px_45px_rgba(255,79,94,0.24)] transition hover:-translate-y-1 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-[#17120f]/25 disabled:shadow-none" disabled={members.length < 3} type="submit">
+                <SubmitButton className="mt-5 w-full rounded-full bg-[#ff4f5e] px-5 py-4 font-black text-white shadow-[0_18px_45px_rgba(255,79,94,0.24)] transition hover:-translate-y-1 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-[#17120f]/25 disabled:shadow-none" disabled={members.length < 3} pendingLabel="Sorteando...">
                   Realizar sorteo
-                </button>
+                </SubmitButton>
               </form>
             ) : null}
 
@@ -99,7 +100,7 @@ export default async function GroupPage({
               name="giftSuggestions"
               placeholder="Cuanto más concreto, mejor: tallas, gustos, tiendas, no-goes..."
             />
-            <button className="mt-4 rounded-full bg-[#14213d] px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-[#1d315a]" type="submit">Guardar sugerencias</button>
+            <SubmitButton className="mt-4 rounded-full bg-[#14213d] px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-[#1d315a] disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="Guardando...">Guardar sugerencias</SubmitButton>
           </form>
 
           <div className="rounded-[2rem] bg-white/78 p-6 ring-1 ring-[#17120f]/8">

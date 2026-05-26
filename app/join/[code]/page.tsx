@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { joinGroupFromRoute } from "@/app/actions/groups";
+import { SubmitButton } from "@/components/submit-button";
 import { requireUser } from "@/lib/auth";
 
 export default async function JoinPage({ params }: { params: Promise<{ code: string }> }) {
@@ -15,7 +16,7 @@ export default async function JoinPage({ params }: { params: Promise<{ code: str
         <p className="mt-5 text-lg text-[#17120f]/62">Vas a entrar con el código:</p>
         <p className="mt-4 rounded-2xl bg-[#ffe66d] px-5 py-4 text-3xl font-black">{decodeURIComponent(code).toUpperCase()}</p>
         <form action={joinAction} className="mt-8">
-          <button className="w-full rounded-full bg-[#ff4f5e] px-6 py-4 font-black text-white shadow-[0_18px_45px_rgba(255,79,94,0.26)] transition hover:-translate-y-1" type="submit">Confirmar unión</button>
+          <SubmitButton className="w-full rounded-full bg-[#ff4f5e] px-6 py-4 font-black text-white shadow-[0_18px_45px_rgba(255,79,94,0.26)] transition hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="Uniendo...">Confirmar unión</SubmitButton>
         </form>
         <Link className="mt-5 inline-flex font-bold text-[#ff4f5e]" href="/dashboard">Cancelar</Link>
       </div>
