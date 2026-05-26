@@ -62,7 +62,11 @@ create table public.email_deliveries (
 create index group_members_user_id_idx on public.group_members(user_id);
 create index group_members_group_id_idx on public.group_members(group_id);
 create index draw_assignments_group_id_idx on public.draw_assignments(group_id);
+create index draw_assignments_giver_id_idx on public.draw_assignments(giver_id);
+create index draw_assignments_receiver_id_idx on public.draw_assignments(receiver_id);
 create index email_deliveries_group_id_idx on public.email_deliveries(group_id);
+create index email_deliveries_recipient_user_id_idx on public.email_deliveries(recipient_user_id);
+create index groups_owner_id_idx on public.groups(owner_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -88,69 +92,87 @@ alter table public.group_members enable row level security;
 alter table public.draw_assignments enable row level security;
 alter table public.email_deliveries enable row level security;
 
+grant usage on schema public to authenticated;
+grant select, insert, update on public.profiles to authenticated;
+grant select, insert, update on public.groups to authenticated;
+grant select, insert, update on public.group_members to authenticated;
+grant select on public.draw_assignments to authenticated;
+grant select on public.email_deliveries to authenticated;
+
 create policy "profiles are visible to authenticated users"
 on public.profiles for select
 to authenticated
 using (true);
 
 create policy "users can maintain their own profile"
-on public.profiles for all
+on public.profiles for insert
 to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
+with check ((select auth.uid()) = id);
+
+create policy "users can update their own profile"
+on public.profiles for update
+to authenticated
+using ((select auth.uid()) = id)
+with check ((select auth.uid()) = id);
 
 create policy "members can read their groups"
 on public.groups for select
 to authenticated
 using (
-  owner_id = auth.uid()
+  owner_id = (select auth.uid())
   or exists (
     select 1 from public.group_members gm
-    where gm.group_id = groups.id and gm.user_id = auth.uid()
+    where gm.group_id = groups.id and gm.user_id = (select auth.uid())
   )
 );
 
 create policy "authenticated users can create groups"
 on public.groups for insert
 to authenticated
-with check (owner_id = auth.uid());
+with check (owner_id = (select auth.uid()));
 
 create policy "owners can update their draft groups"
 on public.groups for update
 to authenticated
-using (owner_id = auth.uid())
-with check (owner_id = auth.uid());
+using (owner_id = (select auth.uid()))
+with check (owner_id = (select auth.uid()));
 
 create policy "members can read group members"
 on public.group_members for select
 to authenticated
 using (
-  user_id = auth.uid()
+  user_id = (select auth.uid())
   or exists (
     select 1 from public.group_members viewer
-    where viewer.group_id = group_members.group_id and viewer.user_id = auth.uid()
+    where viewer.group_id = group_members.group_id and viewer.user_id = (select auth.uid())
   )
 );
 
 create policy "users can join groups as themselves"
 on public.group_members for insert
 to authenticated
-with check (user_id = auth.uid());
+with check (
+  user_id = (select auth.uid())
+  and exists (
+    select 1 from public.groups g
+    where g.id = group_members.group_id and g.status = 'draft'
+  )
+);
 
 create policy "users can update their member row"
 on public.group_members for update
 to authenticated
-using (user_id = auth.uid())
-with check (user_id = auth.uid());
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
 
 create policy "assignment visibility"
 on public.draw_assignments for select
 to authenticated
 using (
-  giver_id = auth.uid()
+  giver_id = (select auth.uid())
   or exists (
     select 1 from public.groups g
-    where g.id = draw_assignments.group_id and g.owner_id = auth.uid()
+    where g.id = draw_assignments.group_id and g.owner_id = (select auth.uid())
   )
 );
 
@@ -158,9 +180,9 @@ create policy "email delivery owner visibility"
 on public.email_deliveries for select
 to authenticated
 using (
-  recipient_user_id = auth.uid()
+  recipient_user_id = (select auth.uid())
   or exists (
     select 1 from public.groups g
-    where g.id = email_deliveries.group_id and g.owner_id = auth.uid()
+    where g.id = email_deliveries.group_id and g.owner_id = (select auth.uid())
   )
 );
