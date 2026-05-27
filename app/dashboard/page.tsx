@@ -5,6 +5,7 @@ import { CopyButton } from "@/components/copy-button";
 import { SubmitButton } from "@/components/submit-button";
 import { requireUser } from "@/lib/auth";
 import { getDashboardGroups } from "@/lib/groups";
+import { getUserInitials } from "@/lib/users";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const user = await requireUser();
@@ -12,16 +13,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const { error } = await searchParams;
   const preparingGroups = groups.filter((group) => group.status === "draft").length;
   const drawnGroups = groups.length - preparingGroups;
-  const displayName =
-    (user.user_metadata?.full_name as string | undefined) ??
-    (user.user_metadata?.name as string | undefined) ??
-    user.email?.split("@")[0] ??
-    "Friendoo";
-  const avatarUrl =
-    (user.user_metadata?.avatar_url as string | undefined) ??
-    (user.user_metadata?.picture as string | undefined) ??
-    null;
-  const initials = getInitials(displayName);
+  const initials = getUserInitials(user);
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#fff7ea] px-5 py-6 text-[#17120f] sm:px-8 md:py-8 lg:px-10">
@@ -31,16 +23,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff4f5e]">Dashboard</p>
-              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] md:text-4xl">Hola, {displayName}</h1>
+              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] md:text-4xl">Hola, {user.name}</h1>
             </div>
 
             <div className="flex items-center gap-3">
               <div
                 className="grid size-11 place-items-center overflow-hidden rounded-full bg-[#14213d] bg-cover bg-center text-sm font-black text-[#ffe66d] shadow-[0_12px_28px_rgba(20,33,61,0.16)]"
-                aria-label={`Avatar de ${displayName}`}
-                style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}
+                aria-label={`Avatar de ${user.name}`}
+                style={user.avatarUrl ? { backgroundImage: `url(${user.avatarUrl})` } : undefined}
               >
-                {avatarUrl ? null : initials}
+                {user.avatarUrl ? null : initials}
               </div>
               <form action={signOut}>
                 <SubmitButton className="rounded-full border border-[#17120f]/10 bg-[#14213d] px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#1d315a] disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="Cerrando...">
@@ -144,14 +136,4 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
     </main>
   );
-}
-
-function getInitials(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
 }

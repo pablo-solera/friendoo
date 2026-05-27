@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { toAppUser } from "@/lib/users";
 
-export async function getUser() {
+async function getSupabaseUser() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -11,18 +13,24 @@ export async function getUser() {
   return user;
 }
 
+export async function getUser() {
+  const user = await getSupabaseUser();
+
+  return user ? toAppUser(user) : null;
+}
+
 export async function requireUser() {
-  const user = await getUser();
+  const user = await getSupabaseUser();
 
   if (!user) {
     redirect("/");
   }
 
   await syncProfile(user);
-  return user;
+  return toAppUser(user);
 }
 
-export async function syncProfile(user: NonNullable<Awaited<ReturnType<typeof getUser>>>) {
+export async function syncProfile(user: SupabaseUser) {
   const admin = createAdminClient();
   const metadata = user.user_metadata ?? {};
 
