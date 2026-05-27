@@ -22,6 +22,20 @@ const suggestionsSchema = z.object({
   giftSuggestions: z.string().trim().max(2000).optional(),
 });
 
+const groupDetailsSchema = groupSchema.omit({ giftSuggestions: true }).extend({
+  groupId: z.string().uuid(),
+});
+
+const removeMemberSchema = z.object({
+  groupId: z.string().uuid(),
+  memberUserId: z.string().uuid(),
+});
+
+const deleteGroupSchema = z.object({
+  groupId: z.string().uuid(),
+  confirmation: z.string().trim(),
+});
+
 type MemberWithProfile = {
   user_id: string;
   gift_suggestions: string | null;
@@ -162,6 +176,105 @@ export async function updateGiftSuggestions(formData: FormData) {
   redirect(`/groups/${parsed.data.groupId}?saved=1`);
 }
 
+export async function updateGroupDetails(formData: FormData) {
+  const user = await requireUser();
+  const parsed = groupDetailsSchema.safeParse({
+    groupId: formData.get("groupId"),
+    name: formData.get("name"),
+    maxPrice: formData.get("maxPrice"),
+    exchangeDate: formData.get("exchangeDate") || undefined,
+    message: formData.get("message") || undefined,
+  });
+
+  if (!parsed.success) {
+    redirect("/dashboard?error=Revisa los datos del sorteo");
+  }
+
+  const admin = createAdminClient();
+  const group = await requireDraftOwnerGroup(parsed.data.groupId, user.id, "editar el sorteo");
+
+  const { error: updateError } = await admin
+    .from("groups")
+    .update({
+      name: parsed.data.name,
+      max_price: parsed.data.maxPrice,
+      exchange_date: parsed.data.exchangeDate || null,
+      message: parsed.data.message || null,
+    })
+    .eq("id", group.id)
+    .eq("status", "draft")
+    .select("id")
+    .single();
+
+  if (updateError) {
+    redirect(`/groups/${group.id}?error=No se pudieron guardar los detalles`);
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath(`/groups/${group.id}`);
+  redirect(`/groups/${group.id}?saved=details`);
+}
+
+export async function removeGroupMember(formData: FormData) {
+  const user = await requireUser();
+  const parsed = removeMemberSchema.safeParse({
+    groupId: formData.get("groupId"),
+    memberUserId: formData.get("memberUserId"),
+  });
+
+  if (!parsed.success) {
+    redirect("/dashboard?error=Participante no válido");
+  }
+
+  if (parsed.data.memberUserId === user.id) {
+    redirect(`/groups/${parsed.data.groupId}?error=El organizador no se puede eliminar de la lista`);
+  }
+
+  const admin = createAdminClient();
+  const group = await requireDraftOwnerGroup(parsed.data.groupId, user.id, "eliminar participantes");
+  const { error: deleteError } = await admin
+    .from("group_members")
+    .delete()
+    .eq("group_id", group.id)
+    .eq("user_id", parsed.data.memberUserId)
+    .neq("role", "owner");
+
+  if (deleteError) {
+    redirect(`/groups/${group.id}?error=No se pudo eliminar al participante`);
+  }
+
+  revalidatePath(`/groups/${group.id}`);
+  redirect(`/groups/${group.id}?saved=member-removed`);
+}
+
+export async function deleteGroup(formData: FormData) {
+  const user = await requireUser();
+  const parsed = deleteGroupSchema.safeParse({
+    groupId: formData.get("groupId"),
+    confirmation: formData.get("confirmation"),
+  });
+
+  if (!parsed.success) {
+    redirect("/dashboard?error=Sorteo no válido");
+  }
+
+  const admin = createAdminClient();
+  const group = await requireOwnerGroup(parsed.data.groupId, user.id, "eliminar el sorteo");
+
+  if (parsed.data.confirmation !== group.name) {
+    redirect(`/groups/${group.id}?error=Escribe el nombre exacto del sorteo para eliminarlo`);
+  }
+
+  const { error: deleteError } = await admin.from("groups").delete().eq("id", group.id).select("id").single();
+
+  if (deleteError) {
+    redirect(`/groups/${group.id}?error=No se pudo eliminar el sorteo`);
+  }
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard?deleted=1");
+}
+
 export async function runDraw(formData: FormData) {
   const user = await requireUser();
   const groupId = String(formData.get("groupId") ?? "");
@@ -261,6 +374,31 @@ function createAssignments(groupId: string, members: MemberWithProfile[]) {
       receiver_id: receiver.user_id,
     };
   });
+}
+
+async function requireOwnerGroup(groupId: string, userId: string, action: string) {
+  const admin = createAdminClient();
+  const { data: group, error } = await admin
+    .from("groups")
+    .select("id, owner_id, name, status")
+    .eq("id", groupId)
+    .maybeSingle();
+
+  if (error || !group || group.owner_id !== userId) {
+    redirect(`/groups/${groupId}?error=Solo el organizador puede ${action}`);
+  }
+
+  return group;
+}
+
+async function requireDraftOwnerGroup(groupId: string, userId: string, action: string) {
+  const group = await requireOwnerGroup(groupId, userId, action);
+
+  if (group.status !== "draft") {
+    redirect(`/groups/${groupId}?error=Solo puedes ${action} antes de realizar el sorteo`);
+  }
+
+  return group;
 }
 
 async function sendAndTrackDrawEmail({

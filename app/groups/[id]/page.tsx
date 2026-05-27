@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { runDraw, updateGiftSuggestions } from "@/app/actions/groups";
+import {
+  deleteGroup,
+  removeGroupMember,
+  runDraw,
+  updateGiftSuggestions,
+  updateGroupDetails,
+} from "@/app/actions/groups";
 import { CopyButton } from "@/components/copy-button";
 import { SubmitButton } from "@/components/submit-button";
 import { requireUser } from "@/lib/auth";
@@ -50,7 +56,7 @@ export default async function GroupPage({
 
           <aside className="space-y-5">
             {error ? <p className="rounded-2xl bg-red-100 px-5 py-4 font-semibold text-red-800">{error}</p> : null}
-            {saved ? <p className="rounded-2xl bg-green-100 px-5 py-4 font-semibold text-green-800">Sugerencias guardadas.</p> : null}
+            {saved ? <p className="rounded-2xl bg-green-100 px-5 py-4 font-semibold text-green-800">{getSavedMessage(saved)}</p> : null}
 
             {group.status === "draft" ? (
               <div className="rounded-[2rem] bg-[#ff9f1c] p-6 shadow-[0_22px_60px_rgba(255,159,28,0.18)]">
@@ -89,6 +95,62 @@ export default async function GroupPage({
           </aside>
         </section>
 
+        {isOwner ? (
+          <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <form action={updateGroupDetails} className="rounded-[2rem] bg-white/82 p-6 shadow-sm ring-1 ring-[#17120f]/8">
+              <input type="hidden" name="groupId" value={group.id} />
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-[#ff4f5e]">Detalles del sorteo</p>
+              <h2 className="mt-3 text-3xl font-black">Editar información</h2>
+              {group.status === "drawn" ? (
+                <p className="mt-4 rounded-2xl bg-orange-100 px-5 py-4 font-semibold text-orange-800">
+                  Los detalles no se pueden editar después de realizar el sorteo.
+                </p>
+              ) : null}
+              <fieldset className="mt-6 space-y-5" disabled={group.status !== "draft"}>
+                <div>
+                  <label className="text-sm font-bold" htmlFor="name">Nombre</label>
+                  <input className="mt-2 min-h-12 w-full rounded-2xl border border-[#17120f]/10 bg-[#fff7ea] px-4 outline-none transition focus:border-[#2ec4b6] disabled:opacity-60" defaultValue={group.name} id="name" name="name" required />
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-bold" htmlFor="maxPrice">Precio máximo</label>
+                    <input className="mt-2 min-h-12 w-full rounded-2xl border border-[#17120f]/10 bg-[#fff7ea] px-4 outline-none transition focus:border-[#2ec4b6] disabled:opacity-60" defaultValue={group.max_price} id="maxPrice" min="1" name="maxPrice" required step="0.01" type="number" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold" htmlFor="exchangeDate">Fecha opcional</label>
+                    <input className="mt-2 min-h-12 w-full rounded-2xl border border-[#17120f]/10 bg-[#fff7ea] px-4 outline-none transition focus:border-[#2ec4b6] disabled:opacity-60" defaultValue={group.exchange_date ?? ""} id="exchangeDate" name="exchangeDate" type="date" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-bold" htmlFor="message">Mensaje para el grupo</label>
+                  <textarea className="mt-2 min-h-28 w-full rounded-2xl border border-[#17120f]/10 bg-[#fff7ea] px-4 py-3 outline-none transition focus:border-[#2ec4b6] disabled:opacity-60" defaultValue={group.message ?? ""} id="message" name="message" />
+                </div>
+              </fieldset>
+              {group.status === "draft" ? (
+                <SubmitButton className="mt-5 rounded-full bg-[#14213d] px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-[#1d315a] disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="Guardando...">
+                  Guardar detalles
+                </SubmitButton>
+              ) : null}
+            </form>
+
+            <form action={deleteGroup} className="rounded-[2rem] border border-red-200 bg-red-50 p-6 shadow-sm">
+              <input type="hidden" name="groupId" value={group.id} />
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-red-700">Zona de peligro</p>
+              <h2 className="mt-3 text-3xl font-black text-red-950">Eliminar sorteo</h2>
+              <p className="mt-4 leading-7 text-red-900/70">
+                Esta acción no se puede deshacer. Se eliminarán participantes, asignaciones y registros de emails asociados.
+              </p>
+              <label className="mt-6 block text-sm font-bold text-red-950" htmlFor="confirmation">
+                Escribe &quot;{group.name}&quot; para confirmar
+              </label>
+              <input className="mt-2 min-h-12 w-full rounded-2xl border border-red-200 bg-white px-4 font-bold outline-none transition focus:border-red-500" id="confirmation" name="confirmation" required />
+              <SubmitButton className="mt-5 w-full rounded-full bg-red-700 px-5 py-3 font-black text-white transition hover:-translate-y-0.5 hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="Eliminando...">
+                Eliminar sorteo
+              </SubmitButton>
+            </form>
+          </section>
+        ) : null}
+
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <form action={updateGiftSuggestions} className="rounded-[2rem] bg-white/82 p-6 shadow-sm ring-1 ring-[#17120f]/8">
             <input type="hidden" name="groupId" value={group.id} />
@@ -112,9 +174,20 @@ export default async function GroupPage({
                     <p className="font-black">{member.profile.name}</p>
                     <p className="text-sm text-[#17120f]/50">{member.role === "owner" ? "Organizador" : "Participante"}</p>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-black ${member.gift_suggestions ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}`}>
-                    {member.gift_suggestions ? "Con sugerencias" : "Pendiente"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black ${member.gift_suggestions ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}`}>
+                      {member.gift_suggestions ? "Con sugerencias" : "Pendiente"}
+                    </span>
+                    {isOwner && group.status === "draft" && member.user_id !== user.id ? (
+                      <form action={removeGroupMember}>
+                        <input type="hidden" name="groupId" value={group.id} />
+                        <input type="hidden" name="memberUserId" value={member.user_id} />
+                        <SubmitButton className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-800 transition hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-60" pendingLabel="...">
+                          Eliminar
+                        </SubmitButton>
+                      </form>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
@@ -123,4 +196,16 @@ export default async function GroupPage({
       </div>
     </main>
   );
+}
+
+function getSavedMessage(saved: string) {
+  if (saved === "details") {
+    return "Detalles guardados.";
+  }
+
+  if (saved === "member-removed") {
+    return "Participante eliminado.";
+  }
+
+  return "Sugerencias guardadas.";
 }
